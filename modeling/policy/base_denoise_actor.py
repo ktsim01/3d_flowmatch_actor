@@ -221,8 +221,13 @@ class DenoiseActor(nn.Module):
 
             # Local diffusion for POSITION
             # x_t = x_0 + sigma_t * epsilon
-            sigma_t = self.position_scheduler.sigmas[timesteps]        # shape (B,)
-            sigma_t = sigma_t.view(-1, 1, 1, 1)                         # broadcast
+            def get_sigma_t(t):
+                # t: (B,) in [0, n_steps-1]
+                t = t.float() / (self.n_steps - 1)
+                sigma_max = 0.0316  # or tuned
+                return sigma_max * t
+
+            sigma_t = get_sigma_t(timesteps).view(-1,1,1,1)
 
             pos_clean  = gt_trajectory[..., :3]
             pos_noise  = noise[..., :3]                                 # ε
