@@ -207,16 +207,41 @@ class DenoiseActor(nn.Module):
                 num_noise=len(noise), device=noise.device
             )
 
-            # Add noise to the clean trajectories
-            pos = self.position_scheduler.add_noise(
-                gt_trajectory[..., :3], noise[..., :3],
-                timesteps
+            # # Add noise to the clean trajectories
+            # pos = self.position_scheduler.add_noise(
+            #     gt_trajectory[..., :3], noise[..., :3],
+            #     timesteps
+            # )
+            # rot = self.rotation_scheduler.add_noise(
+            #     gt_trajectory[..., 3:], noise[..., 3:],
+            #     timesteps
+            # )
+            # noisy_trajectory = torch.cat((pos, rot), -1)
+
+
+            # Local diffusion for POSITION
+            # x_t = x_0 + sigma_t * epsilon
+            sigma_t = self.position_scheduler.sigmas[timesteps]        # shape (B,)
+            sigma_t = sigma_t.view(-1, 1, 1, 1)                         # broadcast
+
+            pos_clean  = gt_trajectory[..., :3]
+            pos_noise  = noise[..., :3]                                 # ε
+            pos_noisy  = pos_clean + sigma_t * pos_noise                # local diffusion
+
+            # Rotation still full DDPM forward
+            rot_noisy = self.rotation_scheduler.add_noise(
+                gt_trajectory[..., 3:], noise[..., 3:], timesteps
             )
-            rot = self.rotation_scheduler.add_noise(
-                gt_trajectory[..., 3:], noise[..., 3:],
-                timesteps
-            )
-            noisy_trajectory = torch.cat((pos, rot), -1)
+
+            noisy_trajectory = torch.cat((pos_noisy, rot_noisy), -1)
+
+            # DDPM target for ROTATION
+            rot_target = self.rotation_scheduler.prepare_target(
+                noise, gt_trajectory
+            )[..., 3:]
+
+            # Local diffusion target for POSITION = ε directly
+            pos_target = pos_noise
 
             # Predict the noise residual
             pred = self.policy_forward_pass(
@@ -226,15 +251,21 @@ class DenoiseActor(nn.Module):
 
             # Compute loss
             for layer_pred in pred:
-                pos = layer_pred[..., :3]
-                rot = layer_pred[..., 3:-1]
+                pos_pred = layer_pred[..., :3]
+                rot_pred = layer_pred[..., 3:-1]
                 openess = layer_pred[..., -1:]
-                denoise_target = self.position_scheduler.prepare_target(
-                    noise, gt_trajectory
-                )
+                # denoise_target = self.position_scheduler.prepare_target(
+                #     noise, gt_trajectory
+                # )
+                # loss = (
+                #     30 * F.l1_loss(pos, denoise_target[..., :3], reduction='mean')
+                #     + 10 * F.l1_loss(rot, denoise_target[..., 3:], reduction='mean')
+                #     + F.binary_cross_entropy_with_logits(openess, gt_openess)
+                # )
+
                 loss = (
-                    30 * F.l1_loss(pos, denoise_target[..., :3], reduction='mean')
-                    + 10 * F.l1_loss(rot, denoise_target[..., 3:], reduction='mean')
+                    30 * F.l1_loss(pos_pred, pos_target, reduction='mean')
+                    + 10 * F.l1_loss(rot_pred, rot_target, reduction='mean')
                     + F.binary_cross_entropy_with_logits(openess, gt_openess)
                 )
                 total_loss = total_loss + loss
