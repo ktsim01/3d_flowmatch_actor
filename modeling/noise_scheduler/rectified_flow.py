@@ -71,6 +71,34 @@ class RFScheduler:
     def prepare_target(self, noise, gt):
         return noise - gt
 
+class LocalRFScheduler:
+    def __init__(self, sigma=0.01):   # std of local diffusion
+        self.sigma = sigma
+
+    def set_timesteps(self, num_inference_steps, device='cpu'):
+        self.timesteps = torch.linspace(1, 0, num_inference_steps, device=device)
+        self.prev_timesteps = torch.cat((self.timesteps[1:], torch.zeros(1, device=device)))
+
+    def sample_noise_step(self, num_noise, device):
+        # Uniform t in [0,1]
+        return torch.rand(num_noise, device=device)
+
+    def add_noise(self, x0, noise, timesteps):
+        b = x0.size(0)
+        t = timesteps.view(b, *([1] * (x0.dim() - 1)))
+        return x0 + t * self.sigma * noise
+
+    def prepare_target(self, noise, gt):
+        # v = sigma * eps
+        return self.sigma * noise
+
+    def step(self, model_output, timestep_ind, sample):
+        # reverse ODE integration
+        t = self.timesteps[timestep_ind]
+        prev_t = self.prev_timesteps[timestep_ind]
+        dt = t - prev_t
+        prev_sample = sample - dt * (self.sigma * model_output)
+        return DummyClass(prev_sample=prev_sample)
 
 class DummyClass:
 

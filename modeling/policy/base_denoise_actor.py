@@ -207,32 +207,11 @@ class DenoiseActor(nn.Module):
                 num_noise=len(noise), device=noise.device
             )
 
-            # # Add noise to the clean trajectories
-            # pos = self.position_scheduler.add_noise(
-            #     gt_trajectory[..., :3], noise[..., :3],
-            #     timesteps
-            # )
-            # rot = self.rotation_scheduler.add_noise(
-            #     gt_trajectory[..., 3:], noise[..., 3:],
-            #     timesteps
-            # )
-            # noisy_trajectory = torch.cat((pos, rot), -1)
-
-
-            # Local diffusion for POSITION
-            # x_t = x_0 + sigma_t * epsilon
-            def get_sigma_t(t):
-                # t: (B,) in [0, n_steps-1]
-                t = t.float() / (self.n_steps - 1)
-                sigma_max = 0.0316  # or tuned
-                return sigma_max * t
-
-            sigma_t = get_sigma_t(timesteps).view(-1,1,1,1)
-
-            pos_clean  = gt_trajectory[..., :3]
-            pos_noise  = noise[..., :3]                                 # ε
-            pos_noisy  = pos_clean + sigma_t * pos_noise                # local diffusion
-
+            # Add noise to the clean trajectories
+            pos_noisy = self.position_scheduler.add_noise(
+                gt_trajectory[..., :3], noise[..., :3],
+                timesteps
+            )
             # Rotation still full DDPM forward
             rot_noisy = self.rotation_scheduler.add_noise(
                 gt_trajectory[..., 3:], noise[..., 3:], timesteps
@@ -240,13 +219,15 @@ class DenoiseActor(nn.Module):
 
             noisy_trajectory = torch.cat((pos_noisy, rot_noisy), -1)
 
+            pos_target = self.position_scheduler.prepare_target(
+            noise[..., :3], None
+            )
+
             # DDPM target for ROTATION
             rot_target = self.rotation_scheduler.prepare_target(
                 noise, gt_trajectory
             )[..., 3:]
 
-            # Local diffusion target for POSITION = ε directly
-            pos_target = pos_noise
 
             # Predict the noise residual
             pred = self.policy_forward_pass(

@@ -1,6 +1,6 @@
 from .ddim import DDIMScheduler
 from .ddpm import DDPMScheduler
-from .rectified_flow import RFScheduler
+from .rectified_flow import RFScheduler, LocalRFScheduler
 
 
 def fetch_schedulers(denoise_model, denoise_timesteps):
@@ -36,10 +36,7 @@ def fetch_schedulers(denoise_model, denoise_timesteps):
             "pi0": "pi0",
             "flow_uniform": "uniform"
         }
-        position_noise_scheduler = RFScheduler(
-            noise_sampler=samplers[denoise_model],
-            noise_sampler_config=noise_sampler_config
-        )
+        position_noise_scheduler = LocalRFScheduler()
         rotation_noise_scheduler = RFScheduler(
             noise_sampler=samplers[denoise_model],
             noise_sampler_config=noise_sampler_config
